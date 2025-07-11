@@ -1,0 +1,93 @@
+!pip install gradio
+!pip install tensorflow
+
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense
+import numpy as np
+import gradio as gr
+import os
+from sklearn.model_selection import train_test_split
+
+----------------------------------------------------------------------------------------------------------------------------------
+
+# Creating synthetic dataset for fake and real videos (images)
+def create_dataset(n_samples=500, img_size=64):
+    X = []
+    y = []
+
+    for _ in range(n_samples):
+        # Real images: smooth patterns
+        img_real = np.ones((img_size, img_size, 3)) * np.random.uniform(0.7, 1.0)
+        X.append(img_real)
+        y.append(0)  # Real label
+
+        # Fake images: noisy patterns
+        img_fake = np.random.rand(img_size, img_size, 3)
+        X.append(img_fake)
+        y.append(1)  # Fake label
+
+    return np.array(X), np.array(y)
+
+# Create dataset
+X, y = create_dataset()
+
+# Split into train and test
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+----------------------------------------------------------------------------------------------------------------------------------
+
+# Create a simple CNN model
+model = Sequential([
+    Conv2D(32, (3,3), activation='relu', input_shape=(64,64,3)),
+    MaxPooling2D((2,2)),
+    Conv2D(64, (3,3), activation='relu'),
+    MaxPooling2D((2,2)),
+    Flatten(),
+    Dense(64, activation='relu'),
+    Dense(1, activation='sigmoid')   # Output: 1 neuron for Fake/Real
+])
+
+# Compile model
+model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+
+# Train model
+history = model.fit(X_train, y_train, epochs=5, validation_data=(X_test, y_test))
+
+model.save("deepfake_detector.h5")
+
+--------------------------------------------------------------------------------------------------------------------------------
+
+# Reload model
+model = tf.keras.models.load_model("deepfake_detector.h5")
+
+# Prediction function
+def predict_deepfake(img):
+    img = tf.image.resize(img, (64, 64))
+    img = np.expand_dims(img, axis=0)
+    prediction = model.predict(img)[0][0]
+
+    if prediction > 0.5:
+        label = "🚨 FAKE Video Detected!"
+        confidence = prediction * 100
+    else:
+        label = "✅ REAL Video Detected!"
+        confidence = (1 - prediction) * 100
+
+    return f"{label}\nConfidence: {confidence:.2f}%"
+
+# Gradio Interface
+with gr.Blocks() as app:
+    gr.Markdown("<h1 style='text-align: center; color: blue;'>Deepfake Video Detector 🔍</h1>")
+    gr.Markdown("Upload a screenshot/frame of your video 📹, and check if it's FAKE or REAL using our AI model 🚀.")
+
+    with gr.Row():
+        image_input = gr.Image(type="numpy", label="Upload Video Frame (Image)")
+        output_label = gr.Textbox(label="Prediction Result")
+
+    predict_button = gr.Button("Detect Now 🚀")
+
+    predict_button.click(fn=predict_deepfake, inputs=image_input, outputs=output_label)
+
+# Launch app
+app.launch(share=True)
